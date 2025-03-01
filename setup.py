@@ -240,7 +240,8 @@ class CMakeBuild(BuildExtension):
         cmake_args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}{os.sep}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
-            f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
+            f"-DCMAKE_BUILD_TYPE={cfg}",
+            "-G", "Unix Makefiles"  # 强制使用 Unix Makefiles
         ]
 
         if CUDA_HOME is not None:
@@ -251,9 +252,9 @@ class CMakeBuild(BuildExtension):
             raise ValueError("Unsupported backend: CUDA_HOME and MUSA_HOME are not set.")
 
         build_args = []
-        if "CMAKE_ARGS" in os.environ:
-            cmake_args += [
-                item for item in os.environ["CMAKE_ARGS"].split(" ") if item]
+        # 添加并行编译参数
+        if "CMAKE_BUILD_PARALLEL_LEVEL" not in os.environ:
+            build_args.append(f"-j{os.cpu_count() or 1}")
 
         if CpuInstructInfo.CPU_INSTRUCT == CpuInstructInfo.FANCY:
             cpu_args = CpuInstructInfo.CMAKE_FANCY
@@ -279,14 +280,32 @@ class CMakeBuild(BuildExtension):
         build_temp = Path(ext.sourcedir) / "build"
         if not build_temp.exists():
             build_temp.mkdir(parents=True)
-        result = subprocess.run(
-            ["cmake", ext.sourcedir, *cmake_args], cwd=build_temp, check=True , capture_output=True
-        )
-        print("Standard output:", result.stdout)
-        print("Standard error:", result.stderr)
-        subprocess.run(
-            ["cmake", "--build", ".", "--verbose", *build_args], cwd=build_temp, check=True
-        )
+            
+        # 打印更多调试信息
+        try:
+            result = subprocess.run(
+                ["cmake", ext.sourcedir, *cmake_args], 
+                cwd=build_temp, 
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print("CMake configuration output:", result.stdout)
+            print("CMake configuration errors:", result.stderr)
+            
+            result = subprocess.run(
+                ["cmake", "--build", ".", *build_args],
+                cwd=build_temp,
+                check=True,
+                capture_output=True,
+                text=True
+            )
+            print("CMake build output:", result.stdout)
+            print("CMake build errors:", result.stderr)
+        except subprocess.CalledProcessError as e:
+            print("CMake failed with output:", e.output)
+            print("CMake failed with stderr:", e.stderr)
+            raise
 
 if CUDA_HOME is not None:
     ops_module = CUDAExtension('KTransformersOps', [
