@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 project(cpuinfer_ext VERSION 0.1.0)
 
+if(DEFINED ENV{CUDA_HOME})
+    set(CUDA_TOOLKIT_ROOT_DIR $ENV{CUDA_HOME})
+endif()
+
+if(DEFINED ENV{CUDA_PATH})
+    set(CUDA_TOOLKIT_ROOT_DIR $ENV{CUDA_PATH})
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math")
@@ -18,20 +25,17 @@ else()
     set(INS_ENB ON)
 endif()
 
-option(LLAMA_AVX                             "llama: enable AVX"                                OFF)
-option(LLAMA_AVX2                            "llama: enable AVX2"                               OFF)
-option(LLAMA_AVX512                          "llama: enable AVX512"                             OFF)
-option(LLAMA_AVX512_VBMI                     "llama: enable AVX512-VBMI"                        OFF)
-option(LLAMA_AVX512_VNNI                     "llama: enable AVX512-VNNI"                        OFF)
-option(LLAMA_AVX512_BF16                     "llama: enable AVX512-BF16"                        OFF)
-option(LLAMA_FMA                             "llama: enable FMA"                                OFF)
-# in MSVC F16C is implied with AVX2/AVX512
-if (NOT MSVC)
-    option(LLAMA_F16C                        "llama: enable F16C"                               OFF)
-endif()
-option(LLAMA_AVX512_FANCY_SIMD               "llama: enable AVX512-VL, AVX512-BW, AVX512-DQ, AVX512-VNNI"                        OFF)
-option(KTRANSFORMERS_USE_CUDA                "ktransformers: use CUDA"                          OFF)
-option(KTRANSFORMERS_USE_MUSA                "ktransformers: use MUSA"                          OFF)
+# 重置所有 AVX 相关选项为 OFF
+option(LLAMA_AVX                   "llama: enable AVX"           OFF)
+option(LLAMA_AVX2                  "llama: enable AVX2"          OFF)
+option(LLAMA_AVX512                "llama: enable AVX512"        OFF)
+option(LLAMA_AVX512_VBMI           "llama: enable AVX512-VBMI"   OFF)
+option(LLAMA_AVX512_VNNI           "llama: enable AVX512-VNNI"   OFF)
+option(LLAMA_AVX512_BF16           "llama: enable AVX512-BF16"   OFF)
+option(LLAMA_FMA                   "llama: enable FMA"           OFF)
+
+# 设置 CUDA 选项
+option(KTRANSFORMERS_USE_CUDA      "ktransformers: use CUDA"     ON)
 
 # Architecture specific
 # TODO: probably these flags need to be tweaked on some architectures
@@ -213,8 +217,17 @@ if (WIN32)
 elseif (UNIX)
     if (KTRANSFORMERS_USE_CUDA)
         find_package(CUDA REQUIRED)
-        include_directories("${CUDA_INCLUDE_DIRS}")
-        add_compile_definitions(KTRANSFORMERS_USE_CUDA=1)
+        if(CUDA_FOUND)
+            message(STATUS "CUDA found: ${CUDA_TOOLKIT_ROOT_DIR}")
+            include_directories(${CUDA_INCLUDE_DIRS})
+            add_compile_definitions(KTRANSFORMERS_USE_CUDA=1)
+            
+            # 设置 CUDA 架构
+            set(CMAKE_CUDA_ARCHITECTURES "60;70;75;80;86")
+            enable_language(CUDA)
+        else()
+            message(FATAL_ERROR "CUDA not found")
+        endif()
     endif()
 
     if (KTRANSFORMERS_USE_MUSA)
@@ -252,10 +265,7 @@ if(WIN32)
     target_link_libraries(${PROJECT_NAME} PRIVATE "$ENV{CUDA_PATH}/lib/x64/cudart.lib")#CUDA::cudart
 elseif(UNIX)
     if(KTRANSFORMERS_USE_CUDA)
-        if(NOT DEFINED ENV{CUDA_HOME} OR "$ENV{CUDA_HOME}" STREQUAL "")
-            set(ENV{CUDA_HOME} "/usr/local/cuda")
-        endif()
-        target_link_libraries(${PROJECT_NAME} PRIVATE "$ENV{CUDA_HOME}/lib64/libcudart.so")
+        target_link_libraries(${PROJECT_NAME} PRIVATE ${CUDA_LIBRARIES})
     endif()
     if(KTRANSFORMERS_USE_MUSA)
         target_link_libraries(${PROJECT_NAME} PRIVATE MUSA::musart)
